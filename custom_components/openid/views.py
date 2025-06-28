@@ -11,6 +11,7 @@ from aiohttp.web import HTTPFound, Request, Response
 from yarl import URL
 
 from homeassistant.auth.models import User
+from homeassistant.auth.providers import homeassistant as auth_ha
 from homeassistant.components.http import HomeAssistantView
 from homeassistant.const import CONF_CLIENT_ID, CONF_CLIENT_SECRET
 from homeassistant.core import HomeAssistant
@@ -216,6 +217,26 @@ class OpenIDCallbackView(HomeAssistantView):
             )
 
         _LOGGER.warning("User %s not found in Home Assistant", username)
+
+        user = await self.hass.auth.async_create_user(
+            name=username, group_ids=["system-users"]
+        )
+        provider: auth_ha = auth_ha.async_get_provider(self.hass)
+
+        # await provider.async_add_auth(username, None)
+        provider.data._data["users"].append(  # noqa: SLF001
+            {
+                "username": username,
+                "password": None,
+            }
+        )
+        await provider.data.async_save()
+
+        credentials = await provider.async_get_or_create_credentials(
+            {"username": username}
+        )
+        await self.hass.auth.async_link_user(user, credentials)
+
         return _show_error(
             params,
             alert_type="error",
